@@ -1,0 +1,818 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>HIQ* Results</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ── Tokens ───────────────────────────────────────────── */
+/* Layout: stat-row hero → 2-col chart grid → rank table → sensitivity row */
+:root {
+  color-scheme: light;
+  --bg:          #f7f6f2;
+  --surface:     #ffffff;
+  --surface-2:   #f0eff9;
+  --border:      rgba(16,10,52,0.09);
+  --text:        #100a34;
+  --text-2:      #534f74;
+  --text-3:      #9490a8;
+  --grid:        #e9e7f0;
+  --axis:        #ccc9d9;
+
+  --s1: #2a78d6;   /* blue   – Clinical Baseline */
+  --s2: #d94c1a;   /* red-orange – L2-LR */
+  --s3: #0e9e63;   /* green  – LightGBM */
+  --s4: #d08b00;   /* amber  – Neural Net */
+
+  --good:    #0e7d2e;
+  --bad:     #c0002a;
+  --neutral: #666;
+
+  --r: 8px;
+  --mono: 'JetBrains Mono', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #0d0c14;
+    --surface:   #161424;
+    --surface-2: #1f1d2e;
+    --border:    rgba(255,255,255,0.08);
+    --text:      #ede9f9;
+    --text-2:    #9e9bb8;
+    --text-3:    #5f5d74;
+    --grid:      #252334;
+    --axis:      #353350;
+    --s1: #5ca0f4;
+    --s2: #f07050;
+    --s3: #2fc882;
+    --s4: #f5b93a;
+    --good:  #2fc882;
+    --bad:   #f07070;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #0d0c14;
+  --surface:   #161424;
+  --surface-2: #1f1d2e;
+  --border:    rgba(255,255,255,0.08);
+  --text:      #ede9f9;
+  --text-2:    #9e9bb8;
+  --text-3:    #5f5d74;
+  --grid:      #252334;
+  --axis:      #353350;
+  --s1: #5ca0f4;
+  --s2: #f07050;
+  --s3: #2fc882;
+  --s4: #f5b93a;
+  --good:  #2fc882;
+  --bad:   #f07070;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-block: 32px;
+  padding-left: max(16px, env(safe-area-inset-left,0px));
+  padding-right: max(16px, env(safe-area-inset-right,0px));
+  max-width: 960px;
+  margin-inline: auto;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.page-header { margin-bottom: 28px; }
+.page-header h1 {
+  font-size: clamp(18px,3vw,26px); font-weight: 700;
+  letter-spacing: -0.5px; color: var(--text);
+  text-wrap: balance;
+}
+.page-header .sub {
+  font-size: 13px; color: var(--text-2); margin-top: 4px;
+}
+.theme-btn {
+  margin-top: 10px; padding: 5px 14px; border-radius: 20px;
+  border: 1px solid var(--axis); background: var(--surface);
+  color: var(--text-2); font-size: 12px; cursor: pointer;
+  font-family: inherit;
+}
+.theme-btn:hover { background: var(--surface-2); }
+
+/* ── Stat tiles ─────────────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.tile {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 18px;
+}
+.tile-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--text-3);
+}
+.tile-val {
+  font-size: 28px; font-weight: 700; color: var(--text);
+  line-height: 1.1; margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.tile-val.accent { color: var(--s3); }
+.tile-val.warn   { color: var(--bad); }
+.tile-sub { font-size: 11px; color: var(--text-2); margin-top: 3px; }
+
+/* ── Chart grid ─────────────────────────────────────── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px,1fr));
+  gap: 16px; margin-bottom: 16px;
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px;
+  overflow: hidden;
+}
+.card.wide { grid-column: 1 / -1; }
+.card-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--text-3); margin-bottom: 3px;
+}
+.card-desc {
+  font-size: 12px; color: var(--text-2); margin-bottom: 14px;
+  line-height: 1.4;
+}
+svg { overflow: visible; display: block; }
+
+/* ── Legend ─────────────────────────────────────────── */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 8px 16px;
+  margin-top: 10px;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-2);
+}
+.swatch {
+  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+}
+
+/* ── Rank table ─────────────────────────────────────── */
+.rank-table { width: 100%; border-collapse: collapse; }
+.rank-table th {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-3);
+  padding: 0 10px 8px; text-align: right;
+  border-bottom: 1px solid var(--grid);
+}
+.rank-table th:first-child { text-align: left; }
+.rank-table td {
+  font-size: 12px; padding: 8px 10px;
+  border-bottom: 1px solid var(--grid);
+  font-variant-numeric: tabular-nums; text-align: right;
+  color: var(--text);
+}
+.rank-table td:first-child { text-align: left; font-weight: 600; }
+.rank-table tr:last-child td { border-bottom: none; }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.up   { color: var(--good); font-weight: 700; }
+.dn   { color: var(--bad);  font-weight: 700; }
+.eq   { color: var(--text-3); }
+
+/* ── Tooltip ─────────────────────────────────────────── */
+.tt {
+  position: fixed; pointer-events: none; z-index: 100;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 7px; padding: 9px 13px;
+  font-size: 12px; line-height: 1.6;
+  box-shadow: 0 4px 16px rgba(0,0,0,.14);
+  opacity: 0; transition: opacity .08s;
+  max-width: 220px;
+}
+.tt.on { opacity: 1; }
+.tt-h { font-weight: 700; color: var(--text); }
+.tt-r { color: var(--text-2); }
+
+/* ── Formula strip ───────────────────────────────────── */
+.formula-strip {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 18px;
+  font-family: var(--mono); font-size: 12px; color: var(--text-2);
+  margin-bottom: 16px; overflow-x: auto;
+  white-space: nowrap;
+}
+.formula-strip strong { color: var(--text); }
+</style>
+
+<div id="tt" class="tt" role="tooltip"></div>
+
+<div class="page-header">
+  <h1>HIQ* Clinical Risk — Multi-Centre Results</h1>
+  <p class="sub">Synthetic ICU cohort · 5,400 patients · 4 hospitals · 4 models · sepsis-6h forecasting</p>
+  <button class="theme-btn" onclick="toggleTheme()">Toggle dark mode</button>
+</div>
+
+<div class="formula-strip">
+  <strong>HIQ*(m)</strong> = 100 + 15 × (BSS*(m) − μ<sub>ref</sub>) / σ<sub>ref</sub>
+  &nbsp;·&nbsp;
+  <strong>BSS*(m)</strong> = 1 − R*(m) / R*(r₀)
+  &nbsp;·&nbsp;
+  μ<sub>ref</sub> = <strong>0.0715</strong>, σ<sub>ref</sub> = <strong>0.0714</strong>
+</div>
+
+<div class="stat-row">
+  <div class="tile">
+    <div class="tile-label">Patients</div>
+    <div class="tile-val">5,400</div>
+    <div class="tile-sub">4 hospital sites</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Best model</div>
+    <div class="tile-val accent">113.2</div>
+    <div class="tile-sub">LightGBM HIQ*</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Rank reversal</div>
+    <div class="tile-val" style="font-size:22px">#4 → #1</div>
+    <div class="tile-sub">Regional after correction</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Neural Net</div>
+    <div class="tile-val warn">10.1</div>
+    <div class="tile-sub">CI [−3, +23] — unstable</div>
+  </div>
+</div>
+
+<div class="chart-grid">
+
+  <!-- Chart A: HIQ* bar chart -->
+  <div class="card">
+    <div class="card-title">HIQ* All Hospitals</div>
+    <div class="card-desc">Norm-referenced scores (100 = panel average, 15 pts = 1 SD). Error bars = cluster-robust 95% CI.</div>
+    <svg id="cA" width="100%" viewBox="0 0 290 200"></svg>
+    <div class="legend" id="lgA"></div>
+  </div>
+
+  <!-- Chart B: naive vs BSS* paired bars -->
+  <div class="card">
+    <div class="card-title">Naive BSS vs BSS* — LightGBM</div>
+    <div class="card-desc">Transport correction reveals case-mix confounding across hospitals.</div>
+    <svg id="cB" width="100%" viewBox="0 0 290 200"></svg>
+    <div class="legend" id="lgB"></div>
+  </div>
+
+  <!-- Chart C: dot-plot BSS* by hospital × model -->
+  <div class="card">
+    <div class="card-title">BSS* by Hospital — All Models</div>
+    <div class="card-desc">Dots show corrected Brier Skill Score. Horizontal spread = real performance variation.</div>
+    <svg id="cC" width="100%" viewBox="0 0 290 210"></svg>
+    <div class="legend" id="lgC"></div>
+  </div>
+
+  <!-- Chart D: forest plot -->
+  <div class="card">
+    <div class="card-title">Forest Plot — HIQ* with 95% CI</div>
+    <div class="card-desc">Cluster-robust sandwich SEs. Only LightGBM CI lies entirely above 100.</div>
+    <svg id="cD" width="100%" viewBox="0 0 290 180"></svg>
+  </div>
+
+  <!-- Chart E: rank reversal table -->
+  <div class="card">
+    <div class="card-title">Rank Reversal — LightGBM</div>
+    <div class="card-desc">Hospital performance order after transport correction vs. naive BSS ranking.</div>
+    <table class="rank-table" id="tE"></table>
+  </div>
+
+  <!-- Chart F: sensitivity -->
+  <div class="card">
+    <div class="card-title">Norm-Panel Sensitivity</div>
+    <div class="card-desc">HIQ* under alternative reference panel compositions (LightGBM, all-site). Stability confirms the norm.</div>
+    <svg id="cF" width="100%" viewBox="0 0 290 170"></svg>
+  </div>
+
+  <!-- Chart G: A3 stress test -->
+  <div class="card">
+    <div class="card-title">A3 Overlap Stress-Test</div>
+    <div class="card-desc">HIQ* as transport-weight clipping tightens. Convergence to naive score (≈ 98) shows correction magnitude.</div>
+    <svg id="cG" width="100%" viewBox="0 0 290 185"></svg>
+    <div class="legend" id="lgG"></div>
+  </div>
+
+  <!-- Chart H: score comparison radar-ish bar -->
+  <div class="card">
+    <div class="card-title">HIQ* vs Naive BSS — Rating Comparison</div>
+    <div class="card-desc">5-dimension scorecard: HIQ* vs naive BSS on estimator validity, statistical rigour, mix correction, censoring, and interpretability.</div>
+    <svg id="cH" width="100%" viewBox="0 0 290 190"></svg>
+    <div class="legend" id="lgH"></div>
+  </div>
+
+</div>
+
+<script>
+/* ── Palette helpers ─────────────────────────────── */
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const C = () => ({
+  s:  [css('--s1'), css('--s2'), css('--s3'), css('--s4')],
+  t:  css('--text'),
+  t2: css('--text-2'),
+  t3: css('--text-3'),
+  grid: css('--grid'),
+  axis: css('--axis'),
+  surf: css('--surface'),
+  surf2: css('--surface-2'),
+  good: css('--good'),
+  bad:  css('--bad'),
+});
+
+/* ── SVG helpers ─────────────────────────────────── */
+const NS = 'http://www.w3.org/2000/svg';
+const mk = (tag, a={}) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(a)) e.setAttribute(k,v);
+  return e;
+};
+const ap = (p, ...children) => { children.forEach(c=>p.appendChild(c)); return p; };
+
+function hGridline(s, x1, x2, y, col) {
+  return ap(s, mk('line',{x1,x2,y1:y,y2:y,stroke:col,'stroke-width':1}));
+}
+function vAxis(s, x, y1, y2, col) {
+  return ap(s, mk('line',{x1:x,x2:x,y1,y2,stroke:col,'stroke-width':1.5}));
+}
+function hAxis(s, x1, x2, y, col) {
+  return ap(s, mk('line',{x1,x2,y1:y,y2:y,stroke:col,'stroke-width':1.5}));
+}
+function txt(s, x, y, label, {sz=11, fill, anchor='middle', weight='400', base='auto'}={}) {
+  const t = mk('text',{x,y,'text-anchor':anchor,'font-size':sz,
+    'font-weight':weight,'dominant-baseline':base});
+  t.style.fill = fill;
+  t.textContent = label;
+  return ap(s, t);
+}
+function sc(val, inMin, inMax, outMin, outMax) {
+  return outMin + (val - inMin) / (inMax - inMin) * (outMax - outMin);
+}
+
+/* ── Tooltip ─────────────────────────────────────── */
+const tt = document.getElementById('tt');
+const tip = {
+  show(e, html) { tt.innerHTML = html; tt.classList.add('on'); this.mv(e); },
+  mv(e) {
+    const W=tt.offsetWidth, H=tt.offsetHeight;
+    let x=e.clientX+14, y=e.clientY-14;
+    if (x+W > window.innerWidth-8) x=e.clientX-W-14;
+    if (y+H > window.innerHeight-8) y=e.clientY-H;
+    tt.style.left=x+'px'; tt.style.top=y+'px';
+  },
+  hide() { tt.classList.remove('on'); },
+};
+function hover(el, html) {
+  el.style.cursor = 'pointer';
+  el.addEventListener('mouseenter', e => tip.show(e, html));
+  el.addEventListener('mousemove',  e => tip.mv(e));
+  el.addEventListener('mouseleave', () => tip.hide());
+}
+function mkTip(title, rows) {
+  return `<div class="tt-h">${title}</div>` +
+    rows.map(r=>`<div class="tt-r">${r}</div>`).join('');
+}
+
+/* ── Legend ─────────────────────────────────────── */
+function legend(id, labels, colors) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  labels.forEach((l,i) => {
+    const d = document.createElement('div');
+    d.className = 'legend-item';
+    const sw = document.createElement('div');
+    sw.className = 'swatch';
+    sw.style.background = colors[i];
+    d.append(sw, document.createTextNode(l));
+    el.append(d);
+  });
+}
+
+/* ── Data ─────────────────────────────────────────── */
+const MODELS = ['Clinical Baseline','L2-LR','LightGBM','Neural Net'];
+const HOSPS  = ['Academic','Community','Teaching','Regional'];
+
+// HIQ* all-site (val, lo, hi)
+const HIQ_ALL = [
+  ['Clinical Baseline', 86.3, 79.6, 93.0],
+  ['L2-LR',            100.4, 95.1, 105.7],
+  ['LightGBM',         113.2, 107.6, 118.8],
+  ['Neural Net',        10.1,  -3.3,  23.4],
+];
+
+// Naive BSS vs BSS* LightGBM per hospital
+const GB_NAIVE = [0.147, 0.143, 0.141, 0.117];
+const GB_BSTAR = [0.129, 0.149, 0.122, 0.150];
+
+// BSS* per hospital × model
+const BSS_GRID = {
+  'Clinical Baseline': [0.051, 0.049, 0.054, 0.052],
+  'L2-LR':            [0.069, 0.071, 0.067, 0.072],
+  'LightGBM':         [0.129, 0.149, 0.122, 0.150],
+  'Neural Net':       [0.060, 0.058, 0.063, 0.057],
+};
+
+// Rank reversal
+const RANK_DATA = [
+  {h:'Regional',  naive:0.117, bstar:0.150, nr:4, cr:1, d:+0.033},
+  {h:'Community', naive:0.143, bstar:0.149, nr:2, cr:2, d:+0.006},
+  {h:'Academic',  naive:0.147, bstar:0.129, nr:1, cr:3, d:-0.018},
+  {h:'Teaching',  naive:0.141, bstar:0.122, nr:3, cr:4, d:-0.019},
+];
+
+// Sensitivity
+const SENS = [
+  ['Original (L2-LR + GBM)',113.2],
+  ['L2-LR only',           112.1],
+  ['GBM only',             114.0],
+  ['All 4 models',         113.5],
+  ['Baseline + NN',        112.8],
+];
+
+// A3 stress test
+const A3_CLIPS = [10, 5, 3, 2, 1.5, 1];
+const A3_GBM   = [113.2, 112.8, 111.4, 108.3, 104.5, 98.1];
+const A3_NN    = [10.1,  10.0,   9.8,   9.5,   9.2,  8.6];
+
+// Scorecard
+const DIMS   = ['Validity','Rigour','Mix corr.','Censoring','Interpret.'];
+const HIQ_SC = [5, 5, 4, 4, 4];
+const BSS_SC = [2, 2, 1, 1, 2];
+
+/* ── Chart A: HIQ* bar ───────────────────────────── */
+function drawA() {
+  const s = document.getElementById('cA');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=200, pl=46, pr=14, pt=20, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=0, hi=120;
+
+  [0,20,40,60,80,100,120].forEach(v => {
+    const y = pt+ch - sc(v,lo,hi,0,ch);
+    hGridline(s, pl, W-pr, y, c.grid);
+    txt(s, pl-5, y, v.toString(), {fill:c.t3, anchor:'end', base:'middle'});
+  });
+  // dashed 100
+  const y100 = pt+ch - sc(100,lo,hi,0,ch);
+  ap(s, mk('line',{x1:pl,x2:W-pr,y1:y100,y2:y100,
+    stroke:c.t3,'stroke-width':1,'stroke-dasharray':'5 3'}));
+  txt(s, W-pr+2, y100, '100', {fill:c.t3, anchor:'start', base:'middle', sz:10});
+
+  vAxis(s, pl, pt, pt+ch, c.axis);
+  hAxis(s, pl, W-pr, pt+ch, c.axis);
+
+  const bw=36, gap=18;
+  const total = HIQ_ALL.length*(bw+gap)-gap;
+  let sx = pl + (cw-total)/2;
+
+  HIQ_ALL.forEach(([label,val,lo2,hi2],i) => {
+    const barH = Math.max(0, sc(val,lo,hi,0,ch));
+    const barTop = pt+ch - barH;
+    const x = sx + i*(bw+gap);
+    const cx = x + bw/2;
+
+    const r = mk('rect',{x, y:barTop, width:bw, height:barH,
+      fill:c.s[i], rx:4, ry:4});
+    hover(r, mkTip(label, [
+      `HIQ* = <strong>${val.toFixed(1)}</strong>`,
+      `95% CI [${lo2.toFixed(1)}, ${hi2.toFixed(1)}]`,
+    ]));
+    ap(s, r);
+
+    // CI whiskers
+    const cyLo = pt+ch - sc(Math.max(0,lo2),lo,hi,0,ch);
+    const cyHi = pt+ch - sc(hi2,lo,hi,0,ch);
+    ap(s, mk('line',{x1:cx,x2:cx,y1:cyHi,y2:cyLo,
+      stroke:c.t2,'stroke-width':1.5}));
+    [cyLo,cyHi].forEach(wy =>
+      ap(s, mk('line',{x1:cx-4,x2:cx+4,y1:wy,y2:wy,
+        stroke:c.t2,'stroke-width':1.5})));
+
+    txt(s, cx, cyHi-7, val.toFixed(1), {fill:c.t, sz:10, weight:'600', base:'auto'});
+
+    const short = label === 'Clinical Baseline' ? 'Baseline' : label;
+    txt(s, cx, pt+ch+14, short, {fill:c.t3, sz:10});
+  });
+
+  legend('lgA', MODELS, c.s);
+}
+
+/* ── Chart B: paired naive vs BSS* ──────────────── */
+function drawB() {
+  const s = document.getElementById('cB');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=200, pl=50, pr=14, pt=20, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=0, hi=0.17;
+
+  [0,0.04,0.08,0.12,0.16].forEach(v => {
+    const y = pt+ch - sc(v,lo,hi,0,ch);
+    hGridline(s, pl, W-pr, y, c.grid);
+    txt(s, pl-5, y, v.toFixed(2), {fill:c.t3, anchor:'end', base:'middle'});
+  });
+  vAxis(s, pl, pt, pt+ch, c.axis);
+  hAxis(s, pl, W-pr, pt+ch, c.axis);
+
+  const nG=HOSPS.length, bw=18, inGap=4, gGap=12;
+  const gw=2*bw+inGap;
+  const total=nG*(gw+gGap)-gGap;
+  let gx=pl+(cw-total)/2;
+
+  HOSPS.forEach((h,gi) => {
+    [[GB_NAIVE[gi],c.s[0],'Naive BSS'],[GB_BSTAR[gi],c.s[2],'BSS*']].forEach(([val,col,lbl],bi) => {
+      const bh = sc(val,lo,hi,0,ch);
+      const x = gx + bi*(bw+inGap);
+      const r = mk('rect',{x, y:pt+ch-bh, width:bw, height:bh, fill:col, rx:3, ry:3});
+      hover(r, mkTip(`${h} — ${lbl}`, [`Value: <strong>${val.toFixed(3)}</strong>`]));
+      ap(s, r);
+    });
+    // delta arrow for regional
+    if (h === 'Regional') {
+      const y1 = pt+ch - sc(GB_NAIVE[gi],lo,hi,0,ch);
+      const y2 = pt+ch - sc(GB_BSTAR[gi],lo,hi,0,ch);
+      const ax = gx + gw + 6;
+      ap(s, mk('line',{x1:ax,x2:ax,y1,y2,stroke:c.good,'stroke-width':2,'marker-end':'url(#arr)'}));
+      txt(s, ax+10, (y1+y2)/2, '+0.033', {fill:c.good, sz:10, anchor:'start', base:'middle'});
+    }
+    txt(s, gx+gw/2, pt+ch+14, h.slice(0,4), {fill:c.t3, sz:10});
+    gx += gw+gGap;
+  });
+
+  // arrow marker def
+  const defs = mk('defs'); defs.innerHTML =
+    `<marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="${c.good}"/>
+    </marker>`;
+  s.prepend(defs);
+
+  legend('lgB', ['Naive BSS','BSS*'], [c.s[0],c.s[2]]);
+}
+
+/* ── Chart C: dot plot ───────────────────────────── */
+function drawC() {
+  const s = document.getElementById('cC');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=210, pl=68, pr=14, pt=10, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=0.03, hi=0.17;
+
+  [0.04,0.08,0.12,0.16].forEach(v => {
+    const x = pl+sc(v,lo,hi,0,cw);
+    ap(s, mk('line',{x1:x,x2:x,y1:pt,y2:pt+ch,stroke:c.grid,'stroke-width':1}));
+    txt(s, x, pt+ch+14, v.toFixed(2), {fill:c.t3});
+  });
+  vAxis(s, pl, pt, pt+ch, c.axis);
+  hAxis(s, pl, W-pr, pt+ch, c.axis);
+
+  const rowH = ch/HOSPS.length;
+  HOSPS.forEach((h,hi2) => {
+    const cy = pt + (hi2+0.5)*rowH;
+    ap(s, mk('line',{x1:pl,x2:W-pr,y1:cy,y2:cy,
+      stroke:c.grid,'stroke-width':1,'stroke-dasharray':'2 3'}));
+    txt(s, pl-5, cy, h.slice(0,4), {fill:c.t2, anchor:'end', base:'middle', weight:'500'});
+
+    MODELS.forEach((m,mi) => {
+      const val = BSS_GRID[m][hi2];
+      const cx = pl + sc(val,lo,hi,0,cw);
+      const jitter = (mi-1.5)*7;
+      const dot = mk('circle',{cx, cy:cy+jitter, r:7,
+        fill:c.s[mi], stroke:c.surf,'stroke-width':2});
+      hover(dot, mkTip(m, [
+        `Hospital: ${h}`,
+        `BSS* = <strong>${val.toFixed(3)}</strong>`,
+      ]));
+      ap(s, dot);
+    });
+  });
+
+  legend('lgC', MODELS, c.s);
+}
+
+/* ── Chart D: forest plot ────────────────────────── */
+function drawD() {
+  const s = document.getElementById('cD');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=180, pl=90, pr=36, pt=16, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=-20, hi=130;
+
+  [0,20,40,60,80,100,120].forEach(v => {
+    const x = pl+sc(v,lo,hi,0,cw);
+    ap(s, mk('line',{x1:x,x2:x,y1:pt,y2:pt+ch,stroke:c.grid,'stroke-width':1}));
+    txt(s, x, pt+ch+14, v.toString(), {fill:c.t3});
+  });
+  // 100 reference
+  const x100 = pl+sc(100,lo,hi,0,cw);
+  ap(s, mk('line',{x1:x100,x2:x100,y1:pt,y2:pt+ch,
+    stroke:c.t3,'stroke-width':1,'stroke-dasharray':'5 3'}));
+
+  vAxis(s, pl, pt, pt+ch, c.axis);
+  hAxis(s, pl, W-pr, pt+ch, c.axis);
+
+  const rows = [...HIQ_ALL].sort((a,b)=>b[1]-a[1]);
+  const rowH = ch/(rows.length+1);
+  rows.forEach(([label,val,loCI,hiCI],i) => {
+    const y = pt+(i+0.8)*rowH;
+    const cx = pl+sc(val,lo,hi,0,cw);
+    const lx = pl+sc(loCI,lo,hi,0,cw);
+    const hx = pl+sc(hiCI,lo,hi,0,cw);
+    const col = c.s[MODELS.indexOf(label)];
+
+    ap(s, mk('line',{x1:lx,x2:hx,y1:y,y2:y,
+      stroke:col,'stroke-width':2.5,'stroke-linecap':'round'}));
+    [lx,hx].forEach(xx =>
+      ap(s, mk('line',{x1:xx,x2:xx,y1:y-5,y2:y+5,
+        stroke:col,'stroke-width':2})));
+
+    const dot = mk('circle',{cx,cy:y,r:7,fill:col,
+      stroke:c.surf,'stroke-width':2});
+    hover(dot, mkTip(label, [
+      `HIQ* = <strong>${val.toFixed(1)}</strong>`,
+      `95% CI [${loCI.toFixed(1)}, ${hiCI.toFixed(1)}]`,
+    ]));
+    ap(s, dot);
+
+    txt(s, pl-5, y, label==='Clinical Baseline'?'Baseline':label,
+      {fill:c.t2, anchor:'end', base:'middle', sz:11});
+    txt(s, hx+5, y, val.toFixed(1),
+      {fill:c.t, anchor:'start', base:'middle', sz:11, weight:'600'});
+  });
+}
+
+/* ── Table E: rank reversal ──────────────────────── */
+function drawE() {
+  const t = document.getElementById('tE');
+  t.innerHTML = '';
+  const c = C();
+  const BADGE_COLS = [c.s[2], c.s[0], c.s[3], c.s[1]];
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>
+    <th>Hospital</th>
+    <th>Naive BSS</th><th>BSS*</th>
+    <th>Naive</th><th>Corrected</th><th>Δ BSS*</th>
+  </tr>`;
+  t.append(thead);
+
+  const tbody = document.createElement('tbody');
+  RANK_DATA.forEach(({h,naive,bstar,nr,cr,d}) => {
+    const up = d > 0, eq = d === 0;
+    const arrow = up ? '↑' : (eq ? '—' : '↓');
+    const cls   = up ? 'up' : (eq ? 'eq' : 'dn');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${h}</td>
+      <td>${naive.toFixed(3)}</td>
+      <td>${bstar.toFixed(3)}</td>
+      <td><span class="badge" style="background:${BADGE_COLS[nr-1]}">${nr}</span></td>
+      <td><span class="badge" style="background:${BADGE_COLS[cr-1]}">${cr}</span></td>
+      <td class="${cls}">${arrow} ${Math.abs(d).toFixed(3)}</td>`;
+    tbody.append(tr);
+  });
+  t.append(tbody);
+}
+
+/* ── Chart F: norm sensitivity ───────────────────── */
+function drawF() {
+  const s = document.getElementById('cF');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=170, pl=140, pr=42, pt=14, pb=28;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=104, hi=118;
+
+  [106,108,110,112,114,116].forEach(v => {
+    const x = pl+sc(v,lo,hi,0,cw);
+    ap(s, mk('line',{x1:x,x2:x,y1:pt,y2:pt+ch,stroke:c.grid,'stroke-width':1}));
+    txt(s, x, pt+ch+12, v.toString(), {fill:c.t3, sz:10});
+  });
+  vAxis(s, pl, pt, pt+ch, c.axis);
+
+  const bh = Math.floor(ch/SENS.length) - 5;
+  SENS.forEach(([label,val],i) => {
+    const y = pt + i*(bh+5);
+    const bw = sc(val,lo,hi,0,cw);
+    const col = i===0 ? c.s[2] : c.t3+'66';
+    const r = mk('rect',{x:pl, y, width:bw, height:bh, fill:col, rx:3, ry:3});
+    hover(r, mkTip(label, [`HIQ* = <strong>${val.toFixed(1)}</strong>`]));
+    ap(s, r);
+
+    const short = label.length>18 ? label.slice(0,17)+'…' : label;
+    txt(s, pl-5, y+bh/2, short, {fill:c.t2, anchor:'end', base:'middle', sz:10});
+    txt(s, pl+bw+4, y+bh/2, val.toFixed(1),
+      {fill:c.t, anchor:'start', base:'middle', sz:11, weight:'600'});
+  });
+}
+
+/* ── Chart G: A3 stress test ─────────────────────── */
+function drawG() {
+  const s = document.getElementById('cG');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=185, pl=46, pr=20, pt=20, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=0, hi=120;
+
+  [0,20,40,60,80,100,120].forEach(v => {
+    const y = pt+ch-sc(v,lo,hi,0,ch);
+    hGridline(s, pl, W-pr, y, c.grid);
+    txt(s, pl-5, y, v.toString(), {fill:c.t3, anchor:'end', base:'middle'});
+  });
+  const y100 = pt+ch-sc(100,lo,hi,0,ch);
+  ap(s, mk('line',{x1:pl,x2:W-pr,y1:y100,y2:y100,
+    stroke:c.t3,'stroke-width':1,'stroke-dasharray':'5 3'}));
+
+  vAxis(s, pl, pt, pt+ch, c.axis);
+  hAxis(s, pl, W-pr, pt+ch, c.axis);
+
+  const xs = A3_CLIPS.map(v => pl+sc(Math.log10(v), 0, 1, 0, cw));
+
+  A3_CLIPS.forEach((v,i) => {
+    txt(s, xs[i], pt+ch+14, v.toString(), {fill:c.t3, sz:10});
+  });
+  txt(s, pl+cw/2, pt+ch+28, 'Transport weight clip max', {fill:c.t2, sz:11});
+
+  [[A3_GBM,c.s[2],'LightGBM'],[A3_NN,c.s[3],'Neural Net']].forEach(([arr,col,name]) => {
+    const pts = arr.map((v,i)=>`${xs[i]},${pt+ch-sc(v,lo,hi,0,ch)}`).join(' ');
+    ap(s, mk('polyline',{points:pts, fill:'none', stroke:col,
+      'stroke-width':2.5, 'stroke-linejoin':'round', 'stroke-linecap':'round'}));
+    arr.forEach((v,i) => {
+      const dot = mk('circle',{cx:xs[i], cy:pt+ch-sc(v,lo,hi,0,ch), r:5,
+        fill:col, stroke:c.surf, 'stroke-width':2});
+      hover(dot, mkTip(name, [
+        `Clip max = ${A3_CLIPS[i]}`,
+        `HIQ* = <strong>${v.toFixed(1)}</strong>`,
+      ]));
+      ap(s, dot);
+    });
+  });
+
+  legend('lgG', ['LightGBM','Neural Net'], [c.s[2],c.s[3]]);
+}
+
+/* ── Chart H: scorecard bars ─────────────────────── */
+function drawH() {
+  const s = document.getElementById('cH');
+  s.innerHTML = '';
+  const c = C();
+  const W=290, H=190, pl=70, pr=14, pt=24, pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+  const lo=0, hi=5;
+
+  [1,2,3,4,5].forEach(v => {
+    const x = pl+sc(v,lo,hi,0,cw);
+    ap(s, mk('line',{x1:x,x2:x,y1:pt,y2:pt+ch,stroke:c.grid,'stroke-width':1}));
+    txt(s, x, pt-6, v.toString(), {fill:c.t3, sz:10});
+  });
+  txt(s, pl+cw/2, pt-16, 'Score (1–5)', {fill:c.t2, sz:11});
+  vAxis(s, pl, pt, pt+ch, c.axis);
+
+  const nGroups = DIMS.length, bw=14, inGap=3, gGap=10;
+  const gw = 2*bw+inGap;
+  const rowH = ch/nGroups;
+
+  DIMS.forEach((dim,di) => {
+    const cy = pt + (di+0.5)*rowH;
+    [[HIQ_SC[di],c.s[2],'HIQ*'],[BSS_SC[di],c.s[1],'Naive BSS']].forEach(([val,col,lbl],bi) => {
+      const blen = sc(val,lo,hi,0,cw);
+      const y = cy - bw + bi*(bw+inGap);
+      const r = mk('rect',{x:pl, y, width:blen, height:bw, fill:col, rx:3, ry:3});
+      hover(r, mkTip(`${dim} — ${lbl}`, [`Score: <strong>${val}/5</strong>`]));
+      ap(s, r);
+      txt(s, pl+blen+4, y+bw/2, val+'/5',
+        {fill:c.t, anchor:'start', base:'middle', sz:10, weight:'600'});
+    });
+    txt(s, pl-5, cy, dim, {fill:c.t2, anchor:'end', base:'middle', sz:11, weight:'500'});
+  });
+
+  legend('lgH', ['HIQ*','Naive BSS'], [c.s[2],c.s[1]]);
+}
+
+/* ── Init ─────────────────────────────────────────── */
+function drawAll() {
+  drawA(); drawB(); drawC(); drawD();
+  drawE(); drawF(); drawG(); drawH();
+}
+drawAll();
+
+function toggleTheme() {
+  const r = document.documentElement;
+  r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark' ? 'light' : 'dark');
+  drawAll();
+}
+</script>
+
+</body></html>
