@@ -1,0 +1,920 @@
+<title>BSS vs HIQ* Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+:root {
+  /* Layout: two-column analysis dashboard, stat tiles top, charts below */
+  --bg:        #f7f8fc;
+  --surface:   #ffffff;
+  --border:    #e2e6f0;
+  --fg:        #1a1d2e;
+  --fg-mid:    #4a5068;
+  --fg-muted:  #8892aa;
+
+  --accent:    #3b5bdb;      /* indigo — primary */
+  --accent2:   #0ea5a0;      /* teal — secondary */
+  --warn:      #e67e22;
+  --danger:    #e53e3e;
+  --good:      #2ecc71;
+
+  /* model palette */
+  --c-baseline: #94a3b8;
+  --c-lr:       #60a5fa;
+  --c-gbm:      #3b5bdb;
+  --c-nn:       #f59e0b;
+
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1117; --surface: #181c27; --border: #2a2f42;
+    --fg: #e8ecf7; --fg-mid: #9ba3bf; --fg-muted: #5a6280;
+    --accent: #748ffc; --accent2: #38d9d4;
+    --warn: #f4a94e; --danger: #fc6565; --good: #4ade80;
+    --c-baseline: #64748b; --c-lr: #93c5fd; --c-gbm: #748ffc; --c-nn: #fcd34d;
+    --shadow: 0 1px 3px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.2);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1117; --surface: #181c27; --border: #2a2f42;
+  --fg: #e8ecf7; --fg-mid: #9ba3bf; --fg-muted: #5a6280;
+  --accent: #748ffc; --accent2: #38d9d4;
+  --warn: #f4a94e; --danger: #fc6565; --good: #4ade80;
+  --c-baseline: #64748b; --c-lr: #93c5fd; --c-gbm: #748ffc; --c-nn: #fcd34d;
+  --shadow: 0 1px 3px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.2);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0 }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--fg);
+  padding-block: max(16px, env(safe-area-inset-top,0px)) max(16px, env(safe-area-inset-bottom,0px));
+  padding-left: max(16px, env(safe-area-inset-left,0px));
+  padding-right: max(16px, env(safe-area-inset-right,0px));
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.header-title { font-family: 'Space Grotesk', sans-serif; }
+.header-title h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.01em; }
+.header-title p  { color: var(--fg-mid); font-size: .85rem; margin-top: 2px; max-width: 54ch; }
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  font-size: .75rem; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+  letter-spacing: .02em;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.tab-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  background: none; border: none; cursor: pointer;
+  padding: 8px 16px; font-size: .82rem; font-weight: 600;
+  color: var(--fg-muted); border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--fg-mid); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Stat tiles ────────────────────────────────────────────────────────── */
+.tiles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+.tile {
+  flex: 1 1 160px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; box-shadow: var(--shadow);
+}
+.tile-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+              color: var(--fg-muted); font-weight: 600; }
+.tile-val { font-family: 'Space Grotesk', sans-serif; font-size: 1.7rem; font-weight: 700;
+            font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile-sub { font-size: .75rem; color: var(--fg-mid); margin-top: 1px; }
+.tile-val.up   { color: var(--good); }
+.tile-val.down { color: var(--danger); }
+.tile-val.mid  { color: var(--warn); }
+
+/* ── Grid and cards ────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+@media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+}
+.card h3 {
+  font-family: 'Space Grotesk', sans-serif; font-size: .9rem; font-weight: 600;
+  margin-bottom: 4px;
+}
+.card .card-sub { font-size: .75rem; color: var(--fg-mid); margin-bottom: 14px; }
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+     font-weight: 600; color: var(--fg-muted);
+     padding: 6px 10px; border-bottom: 2px solid var(--border); text-align: left; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border);
+     font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.model-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; margin-right: 6px; flex-shrink: 0;
+}
+td.num  { text-align: right; }
+td.name { display: flex; align-items: center; white-space: nowrap; }
+
+/* ── SVG charts ────────────────────────────────────────────────────────── */
+svg { width: 100%; display: block; overflow: visible; }
+
+/* ── Legend ────────────────────────────────────────────────────────────── */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 12px 20px;
+  margin-top: 10px; font-size: .78rem;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; color: var(--fg-mid); }
+
+/* ── Insight box ───────────────────────────────────────────────────────── */
+.insight {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 10px 14px; margin-top: 12px;
+  font-size: .82rem; color: var(--fg-mid);
+}
+.insight strong { color: var(--fg); }
+
+/* ── Selector ──────────────────────────────────────────────────────────── */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.select-wrap label { font-size: .78rem; color: var(--fg-mid); font-weight: 500; margin-right: 5px; }
+select {
+  font-family: inherit; font-size: .82rem; padding: 5px 10px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+
+/* ── Sig badges ────────────────────────────────────────────────────────── */
+.sig { font-size: .68rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+.sig.strong { background: color-mix(in srgb,var(--good) 18%,transparent); color: var(--good); }
+.sig.ns     { background: color-mix(in srgb,var(--fg-muted) 15%,transparent); color: var(--fg-muted); }
+
+/* ── Annotation ────────────────────────────────────────────────────────── */
+.annot { font-size: .7rem; fill: var(--fg-muted); font-family: 'Inter', sans-serif; }
+.axis  { stroke: var(--border); }
+.gridl { stroke: var(--border); stroke-dasharray: 3,4; }
+</style>
+
+<div class="page-header">
+  <div class="header-title">
+    <h1>BSS vs HIQ* Explorer</h1>
+    <p>Multi-centre ICU sepsis forecasting — 5,400 patients, 4 hospitals, 4 models. Naive BSS vs IPCW + transport-corrected BSS* vs norm-referenced HIQ*.</p>
+  </div>
+  <span class="badge">Synthetic · Registered Report Demo</span>
+</div>
+
+<!-- ── TABS ── -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+  <button class="tab-btn" onclick="showTab('hospital')">Hospital Comparison</button>
+  <button class="tab-btn" onclick="showTab('models')">Model Ranking</button>
+  <button class="tab-btn" onclick="showTab('transport')">Transport Effect</button>
+</div>
+
+<!-- ══════════════ TAB 1: Overview ══════════════ -->
+<div id="tab-overview" class="tab-panel active">
+  <div class="tiles">
+    <div class="tile">
+      <div class="tile-label">Patients</div>
+      <div class="tile-val">5,400</div>
+      <div class="tile-sub">4 hospitals · sepsis-6h task</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Reference norm μ</div>
+      <div class="tile-val">0.072</div>
+      <div class="tile-sub">BSS* of panel models (LOO-CV)</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Reference norm σ</div>
+      <div class="tile-val">0.071</div>
+      <div class="tile-sub">SD of panel BSS* distribution</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Best model HIQ*</div>
+      <div class="tile-val up">113.2</div>
+      <div class="tile-sub">LightGBM · 95% CI [107.6, 118.8]</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Worst model HIQ*</div>
+      <div class="tile-val down">10.1</div>
+      <div class="tile-sub">Neural Net · unstable miscalibration</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- All-hospital model comparison chart -->
+    <div class="card">
+      <h3>Naive BSS vs Corrected BSS* (All Hospitals)</h3>
+      <div class="card-sub">IPCW + density-ratio transport correction shifts rankings</div>
+      <svg id="chart-bss-comparison" viewBox="0 0 320 200"></svg>
+      <div class="legend" id="legend-bss"></div>
+    </div>
+
+    <!-- HIQ* with CI chart -->
+    <div class="card">
+      <h3>HIQ* with 95% Confidence Intervals</h3>
+      <div class="card-sub">Norm: μ=100, σ=15. Cluster-robust sandwich SE.</div>
+      <svg id="chart-hiq-ci" viewBox="0 0 320 200"></svg>
+      <div class="legend" id="legend-hiq"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>What HIQ* communicates that BSS cannot</h3>
+    <div class="card-sub">Three concrete examples from this dataset</div>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top: 8px;">
+      <div class="insight">
+        <strong>Scale anchoring.</strong> LightGBM BSS* = 0.135 — good or bad? HIQ* = 113.2 says it is 0.9 SD above the reference panel mean: clearly above-average.
+      </div>
+      <div class="insight">
+        <strong>Patient-mix correction flips a ranking.</strong> Regional Hospital looks weakest by naive BSS (0.117) but ranks joint-first by BSS* (0.150) after transport weighting adjusts for its older, lower-acuity mix.
+      </div>
+      <div class="insight">
+        <strong>Uncertainty is part of the score.</strong> Neural Net HIQ* = 10.1 ± 6.8 — the CI spans −3 to +23. The model is likely harmful (below 85) but the estimate is wide; the GBM CI [107.6, 118.8] is entirely above 100.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB 2: Hospital Comparison ══════════════ -->
+<div id="tab-hospital" class="tab-panel">
+  <div class="controls">
+    <div class="select-wrap">
+      <label for="sel-model">Model:</label>
+      <select id="sel-model" onchange="renderHospitalTab()">
+        <option value="LightGBM">LightGBM</option>
+        <option value="L2-LR">L2-LR</option>
+        <option value="Clinical Baseline">Clinical Baseline</option>
+        <option value="Neural Net">Neural Net</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Naive BSS vs BSS* by Hospital</h3>
+      <div class="card-sub">Correction can shift a hospital's rank substantially</div>
+      <svg id="chart-hosp-bss" viewBox="0 0 320 220"></svg>
+    </div>
+    <div class="card">
+      <h3>HIQ* by Hospital</h3>
+      <div class="card-sub">Norm-referenced score on a common scale</div>
+      <svg id="chart-hosp-hiq" viewBox="0 0 320 220"></svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Rank Change: Naive BSS → BSS*</h3>
+    <div class="card-sub">Red = rank fell after IPCW+transport correction; green = rank rose</div>
+    <div class="tbl-wrap" id="rank-table"></div>
+    <div class="insight" id="hosp-insight"></div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB 3: Model Ranking ══════════════ -->
+<div id="tab-models" class="tab-panel">
+  <div class="card" style="margin-bottom:16px">
+    <h3>Full Results Table — All Hospitals Combined</h3>
+    <div class="card-sub">Cluster-robust 95% CIs from sandwich variance (Propositions 1–2)</div>
+    <div class="tbl-wrap">
+      <table id="full-table"></table>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Statistical Significance vs LightGBM</h3>
+      <div class="card-sub">z-score from paired HIQ* difference ÷ combined SE</div>
+      <svg id="chart-sig" viewBox="0 0 320 180"></svg>
+    </div>
+    <div class="card">
+      <h3>BSS* → HIQ* Transformation</h3>
+      <div class="card-sub">Every model mapped onto the norm scale (μ=0.072, σ=0.071)</div>
+      <svg id="chart-transform" viewBox="0 0 320 200"></svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TAB 4: Transport Effect ══════════════ -->
+<div id="tab-transport" class="tab-panel">
+  <div class="card" style="margin-bottom:16px">
+    <h3>How Transport Weighting Changes Brier Risk per Hospital</h3>
+    <div class="card-sub">Density-ratio weights map each hospital's patient mix to target population Q (age N(65,10), severity N(0,1))</div>
+    <svg id="chart-transport" viewBox="0 0 640 200"></svg>
+    <div class="legend" id="legend-transport"></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Hospital Censoring Rates</h3>
+      <div class="card-sub">IPCW accounts for differential censoring across sites</div>
+      <svg id="chart-censor" viewBox="0 0 320 160"></svg>
+    </div>
+    <div class="card">
+      <h3>Naive BSS Bias Direction</h3>
+      <div class="card-sub">Naive BSS − BSS* (positive = naive overestimates skill)</div>
+      <svg id="chart-bias" viewBox="0 0 320 160"></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────
+const DATA = [
+  {hosp:"Academic",   model:"Clinical Baseline", naive:-0.0060, bss:-0.0051, hiq:83.9,  hiq_lo:79.6, hiq_hi:89.9, hiq_se:2.63},
+  {hosp:"Academic",   model:"L2-LR",             naive: 0.0089, bss: 0.0067, hiq:86.4,  hiq_lo:79.6, hiq_hi:93.0, hiq_se:3.40},
+  {hosp:"Academic",   model:"LightGBM",           naive: 0.1465, bss: 0.1294, hiq:112.2, hiq_lo:107.6,hiq_hi:118.8,hiq_se:2.82},
+  {hosp:"Academic",   model:"Neural Net",         naive:-0.2719, bss:-0.3292, hiq:15.9,  hiq_lo:-3.3, hiq_hi:23.4, hiq_se:6.82},
+  {hosp:"Community",  model:"Clinical Baseline",  naive:-0.0022, bss:-0.0021, hiq:84.6,  hiq_lo:79.6, hiq_hi:89.9, hiq_se:2.63},
+  {hosp:"Community",  model:"L2-LR",              naive: 0.0170, bss: 0.0213, hiq:89.5,  hiq_lo:79.6, hiq_hi:93.0, hiq_se:3.40},
+  {hosp:"Community",  model:"LightGBM",           naive: 0.1427, bss: 0.1485, hiq:116.2, hiq_lo:107.6,hiq_hi:118.8,hiq_se:2.82},
+  {hosp:"Community",  model:"Neural Net",         naive:-0.4675, bss:-0.4526, hiq:-10.0, hiq_lo:-3.3, hiq_hi:23.4, hiq_se:6.82},
+  {hosp:"Teaching",   model:"Clinical Baseline",  naive:-0.0042, bss: 0.0036, hiq:85.8,  hiq_lo:79.6, hiq_hi:89.9, hiq_se:2.63},
+  {hosp:"Teaching",   model:"L2-LR",              naive:-0.0032, bss: 0.0025, hiq:85.5,  hiq_lo:79.6, hiq_hi:93.0, hiq_se:3.40},
+  {hosp:"Teaching",   model:"LightGBM",           naive: 0.1409, bss: 0.1217, hiq:110.6, hiq_lo:107.6,hiq_hi:118.8,hiq_se:2.82},
+  {hosp:"Teaching",   model:"Neural Net",         naive:-0.3414, bss:-0.3149, hiq:18.9,  hiq_lo:-3.3, hiq_hi:23.4, hiq_se:6.82},
+  {hosp:"Regional",   model:"Clinical Baseline",  naive: 0.0001, bss: 0.0001, hiq:85.0,  hiq_lo:79.6, hiq_hi:89.9, hiq_se:2.63},
+  {hosp:"Regional",   model:"L2-LR",              naive: 0.0062, bss:-0.0081, hiq:83.3,  hiq_lo:79.6, hiq_hi:93.0, hiq_se:3.40},
+  {hosp:"Regional",   model:"LightGBM",           naive: 0.1172, bss: 0.1495, hiq:116.4, hiq_lo:107.6,hiq_hi:118.8,hiq_se:2.82},
+  {hosp:"Regional",   model:"Neural Net",         naive:-0.4533, bss:-0.3632, hiq: 8.7,  hiq_lo:-3.3, hiq_hi:23.4, hiq_se:6.82},
+  {hosp:"ALL",        model:"Clinical Baseline",  naive:-0.0040, bss:-0.0011, hiq:84.8,  hiq_lo:79.6, hiq_hi:89.9, hiq_se:2.63},
+  {hosp:"ALL",        model:"L2-LR",              naive: 0.0065, bss: 0.0062, hiq:86.3,  hiq_lo:79.6, hiq_hi:93.0, hiq_se:3.40},
+  {hosp:"ALL",        model:"LightGBM",           naive: 0.1405, bss: 0.1345, hiq:113.2, hiq_lo:107.6,hiq_hi:118.8,hiq_se:2.82},
+  {hosp:"ALL",        model:"Neural Net",         naive:-0.3518, bss:-0.3568, hiq:10.1,  hiq_lo:-3.3, hiq_hi:23.4, hiq_se:6.82},
+];
+
+const MODELS   = ["Clinical Baseline","L2-LR","LightGBM","Neural Net"];
+const HOSPITALS = ["Academic","Community","Teaching","Regional"];
+const MCOL = {"Clinical Baseline":"var(--c-baseline)","L2-LR":"var(--c-lr)","LightGBM":"var(--c-gbm)","Neural Net":"var(--c-nn)"};
+const CENSOR = {Academic:4.9, Community:12.1, Teaching:6.6, Regional:13.6};
+const MU_REF = 0.0715, SIG_REF = 0.0714;
+
+function getAll(hosp, model) {
+  if(hosp && model) return DATA.find(d=>d.hosp===hosp&&d.model===model);
+  if(hosp)          return DATA.filter(d=>d.hosp===hosp);
+  if(model)         return DATA.filter(d=>d.model===model);
+  return DATA;
+}
+function fmt2(v){ return v===undefined||isNaN(v)?"—":(v>=0?"+":"")+v.toFixed(3); }
+function fmt1(v){ return v===undefined||isNaN(v)?"—":v.toFixed(1); }
+
+// ── SVG helpers ───────────────────────────────────────────────────────────
+function svgEl(tag, attrs={}){
+  const el = document.createElementNS("http://www.w3.org/2000/svg",tag);
+  for(const[k,v] of Object.entries(attrs)) el.setAttribute(k,v);
+  return el;
+}
+function svgText(parent,x,y,text,cls="annot",anchor="middle"){
+  const t=svgEl("text",{x,y,"text-anchor":anchor,"dominant-baseline":"auto",class:cls});
+  t.textContent=text; parent.appendChild(t);
+}
+function clearSvg(id){
+  const el=document.getElementById(id);
+  while(el.firstChild)el.removeChild(el.firstChild);
+  return el;
+}
+
+// ── Chart: paired bar BSS naive vs BSS* ───────────────────────────────────
+function renderBSSComparison(){
+  const svg=clearSvg("chart-bss-comparison");
+  const W=320,H=200,pl=52,pr=10,pt=14,pb=36;
+  const cw=W-pl-pr, ch=H-pt-pb;
+
+  const allRows = DATA.filter(d=>d.hosp==="ALL");
+  const models = MODELS;
+  const vals = models.map(m=>({
+    m, naive:allRows.find(d=>d.model===m).naive,
+    bss:allRows.find(d=>d.model===m).bss
+  }));
+
+  const minV=Math.min(...vals.flatMap(v=>[v.naive,v.bss]))*1.15;
+  const maxV=Math.max(...vals.flatMap(v=>[v.naive,v.bss]))*1.15;
+  const range=maxV-minV||0.01;
+  const yOf=v=>pt+ch-(v-minV)/range*ch;
+  const y0=yOf(0);
+
+  // zero line
+  const zl=svgEl("line",{x1:pl,x2:W-pr,y1:y0,y2:y0,stroke:"var(--border)",
+    "stroke-width":"1.5","stroke-dasharray":"4,3"});
+  svg.appendChild(zl);
+
+  // axis labels
+  for(const v of [minV,0,maxV]){
+    svgText(svg,pl-6,yOf(v),v.toFixed(2),"annot","end");
+    const gl=svgEl("line",{x1:pl,x2:W-pr,y1:yOf(v),y2:yOf(v),
+      stroke:"var(--border)","stroke-width":"0.5","stroke-dasharray":"2,4"});
+    svg.appendChild(gl);
+  }
+
+  const bw=cw/models.length;
+  const bw2=bw*.28;
+
+  models.forEach((m,i)=>{
+    const {naive,bss}=vals[i];
+    const cx=pl+bw*i+bw/2;
+    const col=getComputedStyle(document.documentElement).getPropertyValue(
+      '--c-'+m.replace(/[^a-z]/gi,'').toLowerCase()) || "#888";
+
+    // naive bar (lighter)
+    const ny=yOf(Math.max(naive,0)), nh=Math.abs(yOf(naive)-y0);
+    const r1=svgEl("rect",{x:cx-bw2-2,y:naive>=0?ny:y0,width:bw2,height:nh,
+      fill:MCOL[m],opacity:"0.35",rx:"2"});
+    svg.appendChild(r1);
+
+    // bss* bar (solid)
+    const by=yOf(Math.max(bss,0)), bh=Math.abs(yOf(bss)-y0);
+    const r2=svgEl("rect",{x:cx+2,y:bss>=0?by:y0,width:bw2,height:bh,
+      fill:MCOL[m],rx:"2"});
+    svg.appendChild(r2);
+
+    // model label
+    const shortName=m.replace("Clinical ","Clin.").replace("Neural Net","NN")
+      .replace("LightGBM","GBM");
+    svgText(svg,cx,H-pb+14,shortName,"annot","middle");
+  });
+
+  // y-axis label
+  const yl=svgEl("text",{x:-H/2,y:11,transform:"rotate(-90)",
+    "text-anchor":"middle","font-size":"9","fill":"var(--fg-muted)",
+    "font-family":"Inter,sans-serif"});
+  yl.textContent="BSS value"; svg.appendChild(yl);
+
+  // legend
+  const leg=document.getElementById("legend-bss");
+  leg.innerHTML=`
+    <div class="legend-item"><svg width="14" height="10"><rect x="0" y="1" width="10" height="8" rx="1" fill="var(--c-gbm)" opacity="0.35"/></svg>Naive BSS</div>
+    <div class="legend-item"><svg width="14" height="10"><rect x="0" y="1" width="10" height="8" rx="1" fill="var(--c-gbm)"/></svg>BSS* (corrected)</div>`;
+}
+
+// ── Chart: HIQ* with CI ───────────────────────────────────────────────────
+function renderHIQCI(){
+  const svg=clearSvg("chart-hiq-ci");
+  const W=320,H=200,pl=58,pr=12,pt=14,pb=36;
+  const ch=H-pt-pb;
+
+  const rows=DATA.filter(d=>d.hosp==="ALL");
+  const minH=Math.min(...rows.map(d=>d.hiq_lo))-10;
+  const maxH=Math.max(...rows.map(d=>d.hiq_hi))+8;
+  const range=maxH-minH;
+  const yOf=v=>pt+ch-(v-minH)/range*ch;
+
+  // reference lines at 85, 100, 115
+  for(const v of [85,100,115]){
+    const y=yOf(v);
+    const gl=svgEl("line",{x1:pl,x2:W-pr,y1:y,y2:y,
+      stroke:v===100?"var(--accent)":"var(--border)",
+      "stroke-width":v===100?"1.5":"0.6","stroke-dasharray":v===100?"5,4":"2,4",
+      opacity:"0.7"});
+    svg.appendChild(gl);
+    svgText(svg,pl-5,y+4,String(v),"annot","end");
+  }
+
+  const bw=(W-pl-pr)/MODELS.length;
+  MODELS.forEach((m,i)=>{
+    const r=rows.find(d=>d.model===m);
+    const cx=pl+bw*i+bw/2;
+    // CI bar
+    const ci=svgEl("rect",{
+      x:cx-4, y:yOf(r.hiq_hi),
+      width:8,height:Math.abs(yOf(r.hiq_lo)-yOf(r.hiq_hi)),
+      fill:MCOL[m],opacity:"0.25",rx:"2"
+    });
+    svg.appendChild(ci);
+    // point
+    const dot=svgEl("circle",{cx,cy:yOf(r.hiq),r:"5",fill:MCOL[m]});
+    svg.appendChild(dot);
+    // value label
+    svgText(svg,cx,yOf(r.hiq)-9,fmt1(r.hiq),"annot","middle");
+    // model label
+    const sn=m.replace("Clinical ","Clin.").replace("Neural Net","NN").replace("LightGBM","GBM");
+    svgText(svg,cx,H-pb+14,sn,"annot","middle");
+  });
+
+  // 100 label
+  const yl=svgEl("text",{x:pl-5,y:yOf(100)+4,"text-anchor":"end","font-size":"8.5",
+    fill:"var(--accent)","font-weight":"600","font-family":"Inter,sans-serif"});
+  yl.textContent="100"; svg.appendChild(yl);
+
+  document.getElementById("legend-hiq").innerHTML=
+    MODELS.map(m=>`<div class="legend-item"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${MCOL[m]}"/></svg>${m}</div>`).join("");
+}
+
+// ── Hospital tab ──────────────────────────────────────────────────────────
+function renderHospitalTab(){
+  const model=document.getElementById("sel-model").value;
+  const rows=HOSPITALS.map(h=>DATA.find(d=>d.hosp===h&&d.model===model));
+
+  // Paired bar chart
+  drawHospBSS(rows);
+  drawHospHIQ(rows);
+
+  // Rank table
+  const naive_sorted=[...rows].sort((a,b)=>b.naive-a.naive);
+  const bss_sorted  =[...rows].sort((a,b)=>b.bss -a.bss );
+  const tbl=document.getElementById("rank-table");
+  tbl.innerHTML=`<table>
+    <thead><tr><th>Hospital</th><th>Naive BSS</th><th>BSS*</th><th>Rank (Naive)</th><th>Rank (BSS*)</th><th>Change</th></tr></thead>
+    <tbody>${rows.map(r=>{
+      const rn=naive_sorted.findIndex(x=>x.hosp===r.hosp)+1;
+      const rb=bss_sorted.findIndex(x=>x.hosp===r.hosp)+1;
+      const diff=rn-rb;
+      const arrow=diff>0?`<span style="color:var(--good)">↑${diff}</span>`:
+                   diff<0?`<span style="color:var(--danger)">↓${Math.abs(diff)}</span>`:
+                   `<span style="color:var(--fg-muted)">—</span>`;
+      return `<tr>
+        <td>${r.hosp}</td>
+        <td class="num">${r.naive.toFixed(4)}</td>
+        <td class="num">${r.bss.toFixed(4)}</td>
+        <td class="num">#${rn}</td>
+        <td class="num">#${rb}</td>
+        <td class="num">${arrow}</td>
+      </tr>`;
+    }).join("")}</tbody></table>`;
+
+  // Insight
+  const flipped=rows.filter((r,_)=>{
+    const rn=naive_sorted.findIndex(x=>x.hosp===r.hosp)+1;
+    const rb=bss_sorted.findIndex(x=>x.hosp===r.hosp)+1;
+    return Math.abs(rn-rb)>=2;
+  });
+  document.getElementById("hosp-insight").innerHTML=
+    flipped.length?`<strong>Rank reversal:</strong> ${flipped.map(r=>r.hosp).join(" and ")} ` +
+      `moved ≥2 positions after IPCW + transport correction — patient-mix differences were large enough to change which hospitals look best.`:
+    `All hospitals maintain their rank after correction for this model — patient-mix differences are modest relative to true skill differences.`;
+}
+
+function barChart(svgId,rows,valFn,ymin,ymax,labelFn,refLines){
+  const svg=clearSvg(svgId);
+  const W=320,H=220,pl=52,pr=12,pt=14,pb=36;
+  const ch=H-pt-pb;
+  const range=ymax-ymin||0.01;
+  const yOf=v=>pt+ch-(v-ymin)/range*ch;
+  const y0=yOf(Math.max(ymin,Math.min(0,ymax)));
+
+  // grid + ref lines
+  if(refLines) refLines.forEach(({v,col,dash})=>{
+    const y=yOf(v);
+    const l=svgEl("line",{x1:pl,x2:W-pr,y1:y,y2:y,
+      stroke:col||"var(--border)","stroke-width":"1.2",
+      "stroke-dasharray":dash||"3,4"});
+    svg.appendChild(l);
+    svgText(svg,pl-5,y+3,String(v),"annot","end");
+  });
+
+  const bw=(W-pl-pr)/rows.length;
+  rows.forEach((r,i)=>{
+    const v=valFn(r);
+    const cx=pl+bw*i+bw/2;
+    const bwbar=bw*.55;
+    const vy=yOf(Math.max(v,0));
+    const bh=Math.abs(yOf(v)-y0);
+    const rect=svgEl("rect",{
+      x:cx-bwbar/2,y:v>=0?vy:y0,
+      width:bwbar,height:bh,
+      fill:MCOL[r.model]||"var(--accent)",rx:"3"
+    });
+    svg.appendChild(rect);
+    svgText(svg,cx,v>=0?vy-5:y0+bh+10,v.toFixed(3),"annot","middle");
+    svgText(svg,cx,H-pb+14,r.hosp.substring(0,4),"annot","middle");
+  });
+
+  // zero line
+  const zl=svgEl("line",{x1:pl,x2:W-pr,y1:y0,y2:y0,
+    stroke:"var(--fg-muted)","stroke-width":"1"});
+  svg.appendChild(zl);
+}
+
+function drawHospBSS(rows){
+  const vals=[...rows.flatMap(r=>[r.naive,r.bss])];
+  const mn=Math.min(...vals)*1.3, mx=Math.max(...vals)*1.3;
+  const svg=clearSvg("chart-hosp-bss");
+  const W=320,H=220,pl=52,pr=12,pt=14,pb=36;
+  const ch=H-pt-pb;
+  const range=(mx-mn)||0.01;
+  const yOf=v=>pt+ch-(v-mn)/range*ch;
+  const y0=yOf(0);
+  const zl=svgEl("line",{x1:pl,x2:W-pr,y1:y0,y2:y0,
+    stroke:"var(--fg-muted)","stroke-width":"1"});
+  svg.appendChild(zl);
+  const bw=(W-pl-pr)/rows.length;
+  rows.forEach((r,i)=>{
+    const cx=pl+bw*i+bw/2;
+    const bw2=bw*.22;
+    for(const[val,offset,alpha] of [[r.naive,-bw2-1,.35],[r.bss,1,1]]){
+      const vy=yOf(Math.max(val,0));
+      const bh=Math.abs(yOf(val)-y0);
+      svg.appendChild(svgEl("rect",{
+        x:cx+offset,y:val>=0?vy:y0,width:bw2,height:bh,
+        fill:MCOL[r.model],opacity:String(alpha),rx:"2"
+      }));
+    }
+    svgText(svg,cx,H-pb+14,r.hosp.substring(0,4),"annot","middle");
+  });
+  for(const v of [mn,0,mx]) svgText(svg,pl-5,yOf(v)+3,v.toFixed(3),"annot","end");
+}
+
+function drawHospHIQ(rows){
+  const svg=clearSvg("chart-hosp-hiq");
+  const W=320,H=220,pl=52,pr=12,pt=14,pb=36;
+  const ch=H-pt-pb;
+  const mn=70,mx=130;
+  const range=mx-mn;
+  const yOf=v=>pt+ch-(v-mn)/range*ch;
+
+  for(const v of [85,100,115]){
+    svg.appendChild(svgEl("line",{x1:pl,x2:W-pr,y1:yOf(v),y2:yOf(v),
+      stroke:v===100?"var(--accent)":"var(--border)",
+      "stroke-width":v===100?"1.5":"0.6","stroke-dasharray":"4,4",opacity:"0.7"}));
+    svgText(svg,pl-5,yOf(v)+3,String(v),"annot","end");
+  }
+  const bw=(W-pl-pr)/rows.length;
+  rows.forEach((r,i)=>{
+    const cx=pl+bw*i+bw/2;
+    const bwbar=bw*.55;
+    const vy=yOf(r.hiq);
+    const bh=Math.abs(yOf(100)-vy);
+    svg.appendChild(svgEl("rect",{
+      x:cx-bwbar/2,y:r.hiq>=100?vy:yOf(100),
+      width:bwbar,height:bh,fill:MCOL[r.model],rx:"3"
+    }));
+    svgText(svg,cx,r.hiq>=100?vy-5:yOf(100)+bh+10,r.hiq.toFixed(1),"annot","middle");
+    svgText(svg,cx,H-pb+14,r.hosp.substring(0,4),"annot","middle");
+  });
+}
+
+// ── Models tab ────────────────────────────────────────────────────────────
+function renderModelsTab(){
+  // Full table
+  const rows=DATA.filter(d=>d.hosp==="ALL");
+  const tbl=document.getElementById("full-table");
+  tbl.innerHTML=`<thead><tr>
+    <th>Model</th><th>Naive BSS</th><th>BSS*</th><th>95% CI (BSS*)</th>
+    <th>HIQ*</th><th>95% CI (HIQ*)</th><th>vs GBM</th>
+  </tr></thead><tbody>${rows.map(r=>{
+    const gbm=rows.find(d=>d.model==="LightGBM");
+    const diff=r.hiq-gbm.hiq;
+    const se=Math.sqrt(r.hiq_se**2+gbm.hiq_se**2);
+    const z=diff/se;
+    const sig=Math.abs(z)>1.96?"strong":"ns";
+    const sigLabel=Math.abs(z)>1.96?"**":"ns";
+    return `<tr>
+      <td><span class="model-dot" style="background:${MCOL[r.model]}"></span>${r.model}</td>
+      <td class="num">${r.naive.toFixed(4)}</td>
+      <td class="num">${r.bss.toFixed(4)}</td>
+      <td class="num">[${r.hiq_lo.toFixed(1)}, ${r.hiq_hi.toFixed(1)}]</td>
+      <td class="num" style="font-weight:600">${r.hiq.toFixed(1)}</td>
+      <td class="num">[${r.hiq_lo.toFixed(1)}, ${r.hiq_hi.toFixed(1)}]</td>
+      <td class="num"><span style="color:${diff>0?'var(--good)':'var(--danger)'}">${diff>=0?'+':''}${diff.toFixed(1)}</span>
+        <span class="sig ${sig}">${sigLabel}</span></td>
+    </tr>`;
+  }).join("")}</tbody>`;
+
+  // Sig chart
+  renderSigChart();
+  renderTransformChart();
+}
+
+function renderSigChart(){
+  const svg=clearSvg("chart-sig");
+  const W=320,H=180,pl=90,pr=12,pt=14,pb=28;
+  const ch=H-pt-pb;
+  const rows=DATA.filter(d=>d.hosp==="ALL");
+  const gbm=rows.find(d=>d.model==="LightGBM");
+  const comparisons=rows.filter(d=>d.model!=="LightGBM").map(r=>{
+    const diff=r.hiq-gbm.hiq;
+    const se=Math.sqrt(r.hiq_se**2+gbm.hiq_se**2);
+    return {m:r.model,z:diff/se,diff};
+  });
+
+  const mn=-16,mx=1;
+  const range=mx-mn;
+  const xOf=v=>pl+(v-mn)/range*(W-pl-pr);
+  const y0=xOf(0);
+
+  // zero line
+  svg.appendChild(svgEl("line",{x1:xOf(0),x2:xOf(0),y1:pt,y2:H-pb,
+    stroke:"var(--fg-muted)","stroke-width":"1"}));
+  // ±1.96 lines
+  for(const v of [-1.96,1.96]){
+    if(v<mn||v>mx) continue;
+    svg.appendChild(svgEl("line",{x1:xOf(v),x2:xOf(v),y1:pt,y2:H-pb,
+      stroke:"var(--warn)","stroke-width":"1","stroke-dasharray":"4,3",opacity:"0.7"}));
+  }
+  // tick labels
+  for(const v of [mn,-1.96,0,1.96]){
+    if(v<mn) continue;
+    svgText(svg,xOf(v),H-pb+12,v.toFixed(1),"annot","middle");
+  }
+  svgText(svg,(W-pl-pr)/2+pl,H-pb+24,"z-score","annot","middle");
+
+  const bh=(ch-20)/comparisons.length;
+  comparisons.forEach((c,i)=>{
+    const y=pt+10+i*(bh+6);
+    const lbl=c.m.replace("Clinical Baseline","Clin. Baseline").replace("Neural Net","Neural Net");
+    svgText(svg,pl-6,y+bh/2+3,lbl,"annot","end");
+    // bar
+    const x1=xOf(Math.min(c.z,0)), x2=xOf(Math.max(c.z,0));
+    svg.appendChild(svgEl("rect",{x:x1,y:y,width:Math.abs(x2-x1),height:bh,
+      fill:MCOL[c.m],rx:"2",opacity:"0.85"}));
+    svgText(svg,xOf(c.z)+(c.z<0?-4:4),y+bh/2+3,c.z.toFixed(2),"annot",c.z<0?"end":"start");
+  });
+}
+
+function renderTransformChart(){
+  const svg=clearSvg("chart-transform");
+  const W=320,H=200,pl=52,pr=20,pt=14,pb=36;
+  const ch=H-pt-pb, cw=W-pl-pr;
+
+  // Draw transformation line: HIQ = 100 + 15*(BSS-mu)/sigma
+  const bss_min=-0.5, bss_max=0.25;
+  const hiq_of_bss=b=>100+15*(b-MU_REF)/SIG_REF;
+  const hiq_min=hiq_of_bss(bss_min), hiq_max=hiq_of_bss(bss_max);
+
+  const xOf=b=>pl+(b-bss_min)/(bss_max-bss_min)*cw;
+  const yOf=h=>pt+ch-(h-hiq_min)/(hiq_max-hiq_min)*ch;
+
+  // Grid
+  for(const h of [0,50,85,100,115,130]){
+    if(h<hiq_min||h>hiq_max) continue;
+    svg.appendChild(svgEl("line",{x1:pl,x2:W-pr,y1:yOf(h),y2:yOf(h),
+      stroke:h===100?"var(--accent)":"var(--border)",
+      "stroke-width":h===100?"1.5":"0.5","stroke-dasharray":"3,4",opacity:"0.7"}));
+    svgText(svg,pl-5,yOf(h)+3,String(h),"annot","end");
+  }
+  for(const b of [-0.4,-0.2,0,0.1,0.2]){
+    if(b<bss_min||b>bss_max) continue;
+    svg.appendChild(svgEl("line",{x1:xOf(b),x2:xOf(b),y1:pt,y2:H-pb,
+      stroke:"var(--border)","stroke-width":"0.5","stroke-dasharray":"2,4",opacity:"0.5"}));
+    svgText(svg,xOf(b),H-pb+12,b.toFixed(1),"annot","middle");
+  }
+
+  // Transformation line
+  const lx1=xOf(bss_min),lx2=xOf(bss_max);
+  const ly1=yOf(hiq_of_bss(bss_min)),ly2=yOf(hiq_of_bss(bss_max));
+  svg.appendChild(svgEl("line",{x1:lx1,y1:ly1,x2:lx2,y2:ly2,
+    stroke:"var(--accent)","stroke-width":"1.5",opacity:"0.5"}));
+
+  // Model points
+  const rows=DATA.filter(d=>d.hosp==="ALL");
+  rows.forEach(r=>{
+    const x=xOf(r.bss), y=yOf(r.hiq);
+    // CI range (vertical)
+    svg.appendChild(svgEl("line",{x1:x,x2:x,y1:yOf(r.hiq_hi),y2:yOf(r.hiq_lo),
+      stroke:MCOL[r.model],"stroke-width":"3",opacity:"0.3"}));
+    svg.appendChild(svgEl("circle",{cx:x,cy:y,r:"5.5",fill:MCOL[r.model]}));
+    const label=r.model.replace("Clinical Baseline","Clin.").replace("Neural Net","NN")
+      .replace("LightGBM","GBM").replace("L2-LR","LR");
+    const offset=r.model==="Neural Net"?-7:7;
+    svgText(svg,x+offset,y-5,label,"annot",r.model==="Neural Net"?"end":"start");
+  });
+
+  svgText(svg,(W-pl-pr)/2+pl,H-pb+24,"BSS*","annot","middle");
+  const yl=svgEl("text",{x:-(pt+ch/2),y:12,transform:"rotate(-90)",
+    "text-anchor":"middle","font-size":"9","fill":"var(--fg-muted)",
+    "font-family":"Inter,sans-serif"});
+  yl.textContent="HIQ*"; svg.appendChild(yl);
+}
+
+// ── Transport tab ─────────────────────────────────────────────────────────
+function renderTransportTab(){
+  // Wide bar chart: naive BSS vs BSS* across all hospital×model combos for GBM
+  const svg=clearSvg("chart-transport");
+  const W=640,H=200,pl=56,pr=12,pt=14,pb=36;
+  const ch=H-pt-pb, cw=W-pl-pr;
+
+  const hosps=HOSPITALS;
+  const nH=hosps.length;
+  const bw=cw/nH;
+  const bw2=bw*.28;
+
+  const gbmRows=hosps.map(h=>DATA.find(d=>d.hosp===h&&d.model==="LightGBM"));
+  const vals=[...gbmRows.flatMap(r=>[r.naive,r.bss])];
+  const mn=Math.min(...vals)*0.8, mx=Math.max(...vals)*1.1;
+  const range=mx-mn;
+  const yOf=v=>pt+ch-(v-mn)/range*ch;
+  const y0=yOf(0);
+
+  svg.appendChild(svgEl("line",{x1:pl,x2:W-pr,y1:y0,y2:y0,
+    stroke:"var(--fg-muted)","stroke-width":"1"}));
+
+  for(const v of [0,0.1,0.15]){
+    if(v<mn||v>mx) continue;
+    svg.appendChild(svgEl("line",{x1:pl,x2:W-pr,y1:yOf(v),y2:yOf(v),
+      stroke:"var(--border)","stroke-width":"0.5","stroke-dasharray":"2,4"}));
+    svgText(svg,pl-5,yOf(v)+3,v.toFixed(2),"annot","end");
+  }
+
+  gbmRows.forEach((r,i)=>{
+    const cx=pl+bw*i+bw/2;
+    for(const[val,offset,alpha] of [[r.naive,-bw2-2,.3],[r.bss,2,1]]){
+      const vy=yOf(val);
+      const bh=Math.abs(yOf(val)-y0);
+      svg.appendChild(svgEl("rect",{
+        x:cx+offset,y:val>=0?vy:y0,width:bw2,height:bh,
+        fill:"var(--c-gbm)",opacity:String(alpha),rx:"2"
+      }));
+      svgText(svg,cx+offset+bw2/2,val>=0?vy-5:y0+5,val.toFixed(3),"annot","middle");
+    }
+    svgText(svg,cx,H-pb+14,r.hosp,"annot","middle");
+  });
+
+  document.getElementById("legend-transport").innerHTML=`
+    <div class="legend-item"><svg width="14" height="10"><rect x="0" y="1" width="10" height="8" rx="1" fill="var(--c-gbm)" opacity="0.3"/></svg>Naive BSS (no correction)</div>
+    <div class="legend-item"><svg width="14" height="10"><rect x="0" y="1" width="10" height="8" rx="1" fill="var(--c-gbm)"/></svg>BSS* (IPCW + transport)</div>`;
+
+  // Censoring chart
+  const csvg=clearSvg("chart-censor");
+  const cW=320,cH=160,cpl=56,cpr=12,cpt=14,cpb=32;
+  const cch=cH-cpt-cpb;
+  const cbw=(cW-cpl-cpr)/HOSPITALS.length;
+  HOSPITALS.forEach((h,i)=>{
+    const v=CENSOR[h];
+    const cx=cpl+cbw*i+cbw/2;
+    const bwb=cbw*.55;
+    const vy=cpt+cch*(1-v/20);
+    csvg.appendChild(svgEl("rect",{
+      x:cx-bwb/2,y:vy,width:bwb,height:cH-cpb-vy,
+      fill:"var(--accent2)",rx:"3"
+    }));
+    svgText(csvg,cx,vy-5,v.toFixed(1)+"%","annot","middle");
+    svgText(csvg,cx,cH-cpb+12,h.substring(0,4),"annot","middle");
+  });
+  for(const v of [5,10,15]){
+    const y=cpt+cch*(1-v/20);
+    csvg.appendChild(svgEl("line",{x1:cpl,x2:cW-cpr,y1:y,y2:y,
+      stroke:"var(--border)","stroke-width":"0.5","stroke-dasharray":"2,4"}));
+    svgText(csvg,cpl-5,y+3,v+"%","annot","end");
+  }
+
+  // Bias chart
+  const bsvg=clearSvg("chart-bias");
+  const bW=320,bH=160,bpl=56,bpr=12,bpt=14,bpb=32;
+  const bch=bH-bpt-bpb;
+  const bbw=(bW-bpl-bpr)/HOSPITALS.length;
+  const gbmBias=HOSPITALS.map(h=>{
+    const r=DATA.find(d=>d.hosp===h&&d.model==="LightGBM");
+    return {h,bias:r.naive-r.bss};
+  });
+  const bmin=-0.04, bmax=0.04;
+  const byOf=v=>bpt+bch*(1-(v-bmin)/(bmax-bmin));
+  const by0=byOf(0);
+  bsvg.appendChild(svgEl("line",{x1:bpl,x2:bW-bpr,y1:by0,y2:by0,
+    stroke:"var(--fg-muted)","stroke-width":"1"}));
+  for(const v of [-0.03,0,0.03]){
+    bsvg.appendChild(svgEl("line",{x1:bpl,x2:bW-bpr,y1:byOf(v),y2:byOf(v),
+      stroke:"var(--border)","stroke-width":"0.5","stroke-dasharray":"2,4"}));
+    svgText(bsvg,bpl-5,byOf(v)+3,v.toFixed(2),"annot","end");
+  }
+  gbmBias.forEach(({h,bias},i)=>{
+    const cx=bpl+bbw*i+bbw/2;
+    const bwb=bbw*.55;
+    const vy=byOf(Math.max(bias,0));
+    const bh=Math.abs(byOf(bias)-by0);
+    bsvg.appendChild(svgEl("rect",{
+      x:cx-bwb/2,y:bias>=0?vy:by0,width:bwb,height:bh,
+      fill:bias>0.001?"var(--warn)":bias<-0.001?"var(--accent2)":"var(--fg-muted)",rx:"2"
+    }));
+    svgText(bsvg,cx,bias>=0?vy-5:by0+bh+5,bias.toFixed(3),"annot","middle");
+    svgText(bsvg,cx,bH-bpb+12,h.substring(0,4),"annot","middle");
+  });
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+function showTab(id){
+  document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
+  document.getElementById("tab-"+id).classList.add("active");
+  document.querySelector(`.tab-btn[onclick="showTab('${id}')"]`).classList.add("active");
+  if(id==="hospital") renderHospitalTab();
+  if(id==="models")   renderModelsTab();
+  if(id==="transport") renderTransportTab();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+renderBSSComparison();
+renderHIQCI();
+</script>
